@@ -1,0 +1,28 @@
+# FastAPI web framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.6
+pydantic==2.9.2
+pydantic-settings==2.5.2
+
+# Google APIs (Sheets + Calendar)
+google-api-python-client==2.149.0
+google-auth-httplib2==0.2.0
+google-auth-oauthlib==1.2.1
+
+# Twilio (WhatsApp notifications)
+twilio==9.3.0
+
+# Scheduling (daily reminders)
+apscheduler==3.10.4
+
+# HTTP client for async requests
+httpx==0.27.2
+
+# CORS support
+# (included with FastAPI/uvicorn)
+
+# Date handling
+python-dateutil==2.9.0
+
+# Rate limiting
+slowapi==0.1.9

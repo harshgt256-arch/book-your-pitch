@@ -1,0 +1,37 @@
+# ── Python ──────────────────────────────────
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+
+# ── Environment & secrets ──────────────────
+.env
+.env.*
+!*.example
+service-account-key.json
+
+# ── Git ─────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── IDE / OS ────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Docker ──────────────────────────────────
+.dockerignore
+Dockerfile
+
+# ── Logs / temp ─────────────────────────────
+*.log
+*.pid
+*.seed

@@ -1,0 +1,28 @@
+# ── Python ──────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.venv/
+
+# ── Environment & secrets ──────────────────
+.env
+.env.*
+!*.example
+service-account-key.json
+
+# ── IDE / OS ────────────────────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ── Logs / temp ─────────────────────────────
+*.log
+*.pid
+*.seed

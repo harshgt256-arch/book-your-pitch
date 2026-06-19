@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Your Pitch — Booking Automation</title>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500;1,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
+
+  <!-- html2pdf library for PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ============== NAV ============== -->
+  <nav class="nav">
+    <div class="nav-inner">
+      <div class="nav-brand">
+        <svg class="nav-logo" viewBox="0 0 40 40" fill="none">
+          <rect x="2" y="2" width="36" height="36" rx="10" stroke="currentColor" stroke-width="3" />
+          <path d="M12 20 L20 12 L28 20 L20 28 Z" fill="currentColor" opacity="0.8" />
+          <circle cx="20" cy="20" r="4" fill="#ffffff" />
+        </svg>
+        <span class="nav-title">Book Your Pitch</span>
+      </div>
+      <div class="nav-stats">
+        <button class="nav-tab active" data-tab="booking" id="tab-booking">New Booking</button>
+        <button class="nav-tab" data-tab="bookings-list" id="tab-bookings-list">All Bookings</button>
+        <button class="nav-tab" data-tab="venues" id="tab-venues">Manage Venues</button>
+        <span class="stat-badge" id="total-bookings">0</span>
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============== MAIN LAYOUT ============== -->
+  <main class="main">
+
+    <!-- ========== TAB 1: BOOKING FORM ========== -->
+    <div class="tab-content active" id="tab-content-booking">
+
+      <!-- LEFT: FORM -->
+      <section class="panel panel-form" id="form-panel">
+        <div class="panel-header">
+          <h2 class="panel-title">New Booking</h2>
+          <p class="panel-sub">Enter client details to process the booking</p>
+        </div>
+
+        <form id="booking-form" autocomplete="off" novalidate>
+          <!-- Row 1 -->
+          <div class="form-row">
+            <div class="field-group">
+              <label class="field-label" for="customer-name">Customer Name</label>
+              <input type="text" id="customer-name" class="field-input" placeholder="e.g. Rajesh Sharma" required />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="sport-type">Sport Type</label>
+              <div class="select-wrapper">
+                <select id="sport-type" class="field-input" required>
+                  <option value="" disabled selected>Select sport</option>
+                  <option value="Cricket">Cricket</option>
+                  <option value="Football">Football</option>
+                  <option value="Pickleball">Pickleball</option>
+                  <option value="Badminton">Badminton</option>
+                  <option value="Tennis">Tennis</option>
+                  <option value="Other">Other</option>
+                </select>
+                <svg class="select-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Row 2 -->
+          <div class="form-row">
+            <div class="field-group">
+              <label class="field-label" for="venue-name">Venue Name</label>
+              <div class="select-wrapper">
+                <select id="venue-name" class="field-input" required>
+                  <option value="" disabled selected>Select venue</option>
+                </select>
+                <svg class="select-chevron" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clip-rule="evenodd" /></svg>
+              </div>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="booking-date">Booking Date</label>
+              <input type="date" id="booking-date" class="field-input" required />
+            </div>
+          </div>
+
+          <!-- Row 3 -->
+          <div class="form-row">
+            <div class="field-group">
+              <label class="field-label" for="client-email">Email Address</label>
+              <input type="email" id="client-email" class="field-input" placeholder="e.g. client@example.com" />
+              <span class="field-hint">For email confirmation &amp; calendar invite</span>
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="client-phone">Phone Number</label>
+              <input type="tel" id="client-phone" class="field-input" placeholder="e.g. +91 98765 43210" />
+              <span class="field-hint">For WhatsApp confirmation &amp; reminders</span>
+            </div>
+          </div>
+
+          <!-- Row 4 -->
+          <div class="form-row">
+            <div class="field-group">
+              <label class="field-label" for="start-time">Start Time</label>
+              <input type="time" id="start-time" class="field-input" required />
+            </div>
+            <div class="field-group">
+              <label class="field-label" for="end-time">End Time</label>
+              <input type="time" id="end-time" class="field-input" required />
+            </div>
+          </div>
+
+          <!-- Row 5 -->
+          <div class="form-row">
+            <div class="field-group">
+              <label class="field-label">Payment Mode</label>
+              <div class="payment-toggle">
+                <label class="toggle-option active" data-value="online">
+                  <input type="radio" name="payment" value="Online" checked />
+                  <svg viewBox="0 0 20 20" fill="currentColor" class="toggle-icon"><path d="M1 4a1 1 0 011-1h16a1 1 0 011 1v12a1 1 0 01-1 1H2a1 1 0 01-1-1V4zm2 2v8h14V6H3zm3 5a1 1 0 000 2h3a1 1 0 000-2H6z"/></svg>
+                  <span>Online</span>
+                </label>
+                <label class="toggle-option" data-value="venue">
+                  <input type="radio" name="payment" value="Pay at Venue" />
+                  <svg viewBox="0 0 20 20" fill="currentColor" class="toggle-icon"><path d="M10 2a6 6 0 00-6 6c0 2.5 1.5 4.5 3 6l3 4 3-4c1.5-1.5 3-3.5 3-6a6 6 0 00-6-6zm0 9a3 3 0 110-6 3 3 0 010 6z"/></svg>
+                  <span>Pay at Venue</span>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <button type="submit" class="btn-submit" id="btn-submit">
+            <span class="btn-text">Process Booking</span>
+            <svg class="btn-arrow" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 10a.75.75 0 01.75-.75h10.638L10.23 5.29a.75.75 0 111.04-1.08l5.5 5.25a.75.75 0 010 1.08l-5.5 5.25a.75.75 0 11-1.04-1.08l4.158-3.96H3.75A.75.75 0 013 10z" clip-rule="evenodd" /></svg>
+          </button>
+        </form>
+
+        <!-- Quick fill samples -->
+        <div class="quick-fill">
+          <span class="quick-label">Quick fill:</span>
+          <button class="quick-btn" data-sample="cricket">Cricket</button>
+          <button class="quick-btn" data-sample="football">Football</button>
+          <button class="quick-btn" data-sample="pickleball">Pickleball</button>
+        </div>
+      </section>
+
+      <!-- RIGHT: RESULTS -->
+      <section class="panel panel-results" id="results-panel">
+        <!-- Empty state -->
+        <div class="empty-state" id="empty-state">
+          <svg class="empty-icon" viewBox="0 0 80 80" fill="none">
+            <rect x="10" y="10" width="60" height="60" rx="16" stroke="currentColor" stroke-width="2" stroke-dasharray="4 4" />
+            <path d="M30 40 L38 48 L50 32" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+          </svg>
+          <h3 class="empty-title">Ready to Book</h3>
+          <p class="empty-desc">Fill in the client details on the left and hit <strong>Process Booking</strong> to generate the invoice.</p>
+        </div>
+
+        <!-- Workflow pipeline -->
+        <div class="pipeline" id="pipeline" style="display:none;">
+          <div class="pipeline-steps">
+            <div class="pipe-step" data-step="parse"><span class="step-icon">📋</span><span class="step-label">Parse</span></div>
+            <div class="pipe-step" data-step="validate"><span class="step-icon">✓</span><span class="step-label">Validate</span></div>
+            <div class="pipe-step" data-step="availability"><span class="step-icon">🔍</span><span class="step-label">Availability</span></div>
+            <div class="pipe-step" data-step="pricing"><span class="step-icon">💰</span><span class="step-label">Pricing</span></div>
+            <div class="pipe-step" data-step="booking"><span class="step-icon">🔖</span><span class="step-label">Book</span></div>
+            <div class="pipe-step" data-step="invoice"><span class="step-icon">🧾</span><span class="step-label">Invoice</span></div>
+          </div>
+        </div>
+
+        <!-- Invoice card -->
+        <div class="invoice-container" id="invoice-container" style="display:none;">
+          <div class="invoice-card" id="invoice-card">
+            <!-- Header -->
+            <div class="inv-header">
+              <div class="inv-brand">
+              <svg class="inv-logo" viewBox="0 0 40 40" fill="none">
+                <rect x="2" y="2" width="36" height="36" rx="10" stroke="#0ea5e9" stroke-width="3" />
+                <path d="M12 20 L20 12 L28 20 L20 28 Z" fill="#0ea5e9" opacity="0.8" />
+                <circle cx="20" cy="20" r="4" fill="#ffffff" />
+              </svg>
+                <div>
+                  <div class="inv-brand-name">Book Your Pitch</div>
+                  <div class="inv-brand-tag">Sports Venue Booking</div>
+                </div>
+              </div>
+              <div class="inv-badge" id="inv-payment-badge">Paid</div>
+            </div>
+
+            <!-- Booking ID -->
+            <div class="inv-id-row">
+              <span class="inv-id-label">Booking ID</span>
+              <span class="inv-id-value" id="inv-booking-id">BYP-0000-0000</span>
+            </div>
+
+            <!-- Details grid -->
+            <div class="inv-details">
+              <div class="inv-detail">
+                <span class="inv-d-label">Customer</span>
+                <span class="inv-d-value" id="inv-customer">—</span>
+              </div>
+              <div class="inv-detail">
+                <span class="inv-d-label">Sport</span>
+                <span class="inv-d-value" id="inv-sport">—</span>
+              </div>
+              <div class="inv-detail">
+                <span class="inv-d-label">Venue</span>
+                <span class="inv-d-value" id="inv-venue">—</span>
+              </div>
+              <div class="inv-detail">
+                <span class="inv-d-label">Date</span>
+                <span class="inv-d-value" id="inv-date">—</span>
+              </div>
+              <div class="inv-detail">
+                <span class="inv-d-label">Time</span>
+                <span class="inv-d-value" id="inv-time">—</span>
+              </div>
+              <div class="inv-detail">
+                <span class="inv-d-label">Duration</span>
+                <span class="inv-d-value" id="inv-duration">—</span>
+              </div>
+            </div>
+
+            <!-- Pricing table -->
+            <table class="inv-pricing">
+              <tr>
+                <td>Base Amount <span class="inv-rate" id="inv-rate">(₹0/hr)</span></td>
+                <td class="inv-amount" id="inv-base">₹0</td>
+              </tr>
+              <tr>
+                <td>GST (18%)</td>
+                <td class="inv-amount" id="inv-gst">₹0</td>
+              </tr>
+              <tr class="inv-total-row">
+                <td><strong>Total Amount</strong></td>
+                <td class="inv-amount inv-total" id="inv-total">₹0</td>
+              </tr>
+            </table>
+
+            <!-- Footer -->
+            <div class="inv-footer">
+              <p>Thank you for booking with us. See you at the venue!</p>
+            </div>
+          </div>
+
+          <!-- Error message (slot not available) -->
+          <div class="error-card" id="error-card" style="display:none;">
+            <div class="error-icon">⛔</div>
+            <h3 class="error-title">Slot Not Available</h3>
+            <p class="error-msg" id="error-msg">Sorry, this time slot is already booked.</p>
+            <button class="btn-retry" id="btn-retry">Try Another Slot</button>
+          </div>
+
+          <!-- Actions -->
+          <div class="inv-actions" id="inv-actions" style="display:none;">
+            <button class="btn-action btn-pdf" id="btn-pdf">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
+              Download PDF
+            </button>
+            <button class="btn-action btn-new" id="btn-new">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
+              New Booking
+            </button>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- ========== TAB 2: BOOKINGS LIST ========== -->
+    <div class="tab-content" id="tab-content-bookings-list">
+      <section class="panel panel-full">
+        <div class="panel-header panel-header-row">
+          <div>
+            <h2 class="panel-title">All Bookings</h2>
+            <p class="panel-sub" id="bookings-count">0 bookings found</p>
+          </div>
+          <div class="panel-actions">
+            <div class="search-wrapper">
+              <svg class="search-icon" viewBox="0 0 20 20" fill="currentColor" width="16"><path fill-rule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9z" clip-rule="evenodd"/></svg>
+              <input type="text" class="search-input" id="bookings-search" placeholder="Search bookings..." />
+            </div>
+            <button class="btn-action btn-export" id="btn-export-csv">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M10 1a.75.75 0 01.75.75v5.59l1.95-2.1a.75.75 0 111.1 1.02l-3.25 3.5a.75.75 0 01-1.1 0L6.2 6.26a.75.75 0 111.1-1.02l1.95 2.1V1.75A.75.75 0 0110 1z"/><path d="M2.5 10a.75.75 0 01.75.75v3.5a1.5 1.5 0 001.5 1.5h10.5a1.5 1.5 0 001.5-1.5v-3.5a.75.75 0 011.5 0v3.5a3 3 0 01-3 3H4.75a3 3 0 01-3-3v-3.5A.75.75 0 012.5 10z"/></svg>
+              Export CSV
+            </button>
+            <button class="btn-action btn-clear-all" id="btn-clear-all">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M6.28 5.22a.75.75 0 00-1.06 1.06L8.94 10l-3.72 3.72a.75.75 0 101.06 1.06L10 11.06l3.72 3.72a.75.75 0 101.06-1.06L11.06 10l3.72-3.72a.75.75 0 00-1.06-1.06L10 8.94 6.28 5.22z"/></svg>
+              Clear All
+            </button>
+          </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="stats-row" id="stats-row">
+          <div class="stat-card">
+            <span class="stat-card-label">Total Revenue</span>
+            <span class="stat-card-value" id="stat-revenue">₹0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Online Payments</span>
+            <span class="stat-card-value" id="stat-online">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Venue Payments</span>
+            <span class="stat-card-value" id="stat-venue">0</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-card-label">Unique Venues</span>
+            <span class="stat-card-value" id="stat-venues-count">0</span>
+          </div>
+        </div>
+
+        <!-- Bookings table -->
+        <div class="table-wrapper">
+          <table class="bookings-table" id="bookings-table">
+            <thead>
+              <tr>
+                <th>Booking ID</th>
+                <th>Customer</th>
+                <th>Sport</th>
+                <th>Venue</th>
+                <th>Date</th>
+                <th>Time</th>
+                <th>Amount</th>
+                <th>Payment</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="bookings-tbody">
+              <!-- Rows rendered by JS -->
+            </tbody>
+          </table>
+        </div>
+
+        <div class="table-empty" id="table-empty">
+          <svg viewBox="0 0 40 40" fill="none" width="48" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+            <rect x="4" y="4" width="32" height="32" rx="8" />
+            <path d="M16 24 L20 20 L24 24 M20 20 V30" stroke-linecap="round" />
+          </svg>
+          <p>No bookings yet. Create your first booking!</p>
+        </div>
+      </section>
+    </div>
+
+    <!-- ========== TAB 3: MANAGE VENUES ========== -->
+    <div class="tab-content" id="tab-content-venues">
+      <section class="panel panel-full">
+        <div class="panel-header panel-header-row">
+          <div>
+            <h2 class="panel-title">Manage Venues</h2>
+            <p class="panel-sub" id="venues-count">0 venues configured</p>
+          </div>
+          <div class="panel-actions">
+            <button class="btn-action btn-add-venue" id="btn-add-venue">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
+              Add Venue
+            </button>
+          </div>
+        </div>
+
+        <!-- Venue cards grid -->
+        <div class="venues-grid" id="venues-grid">
+          <!-- Cards rendered by JS -->
+        </div>
+
+        <!-- Empty state -->
+        <div class="table-empty" id="venues-empty" style="display:none;">
+          <svg viewBox="0 0 40 40" fill="none" width="48" stroke="currentColor" stroke-width="1.5" opacity="0.3">
+            <rect x="4" y="4" width="32" height="32" rx="8" stroke-dasharray="3 3" />
+            <path d="M16 20 L24 20 M20 16 V24" stroke-linecap="round" />
+          </svg>
+          <p>No venues yet. Click <strong>Add Venue</strong> to create one.</p>
+        </div>
+      </section>
+    </div>
+
+  </main>
+
+  <!-- ============== VENUE MODAL ============== -->
+  <div class="modal-overlay" id="venue-modal">
+    <div class="modal-content modal-sm">
+      <div class="modal-header">
+        <h3 class="modal-title" id="venue-modal-title">Add Venue</h3>
+        <button class="modal-close" id="venue-modal-close">&times;</button>
+      </div>
+      <form id="venue-form" autocomplete="off" novalidate>
+        <div class="field-group">
+          <label class="field-label" for="venue-name-input">Venue Name</label>
+          <input type="text" id="venue-name-input" class="field-input" placeholder="e.g. Elite Turf" required />
+        </div>
+        <div class="field-group">
+          <label class="field-label">Available Sports</label>
+          <div class="sports-checklist" id="sports-checklist">
+            <label class="check-item"><input type="checkbox" value="Cricket" /> Cricket</label>
+            <label class="check-item"><input type="checkbox" value="Football" /> Football</label>
+            <label class="check-item"><input type="checkbox" value="Pickleball" /> Pickleball</label>
+            <label class="check-item"><input type="checkbox" value="Badminton" /> Badminton</label>
+            <label class="check-item"><input type="checkbox" value="Tennis" /> Tennis</label>
+            <label class="check-item"><input type="checkbox" value="Other" /> Other</label>
+          </div>
+          <p class="field-hint">Select one or more sports available at this venue.</p>
+        </div>
+        <input type="hidden" id="venue-edit-id" value="" />
+        <div class="modal-actions">
+          <button type="button" class="btn-action btn-cancel" id="venue-modal-cancel">Cancel</button>
+          <button type="submit" class="btn-action btn-save-venue" id="btn-save-venue">Save Venue</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- ============== CONFIRM MODAL ============== -->
+  <div class="modal-overlay" id="confirm-modal">
+    <div class="modal-content modal-confirm">
+      <div class="confirm-icon">⚠️</div>
+      <h3 class="confirm-title" id="confirm-title">Are you sure?</h3>
+      <p class="confirm-msg" id="confirm-msg">This action cannot be undone.</p>
+      <div class="modal-actions">
+        <button class="btn-action btn-cancel" id="confirm-cancel">Cancel</button>
+        <button class="btn-action btn-danger" id="confirm-ok">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============== TOAST ============== -->
+  <div class="toast" id="toast"></div>
+
+  <script src="main.js"></script>
+</body>
+</html>
