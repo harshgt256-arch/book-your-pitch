@@ -9,6 +9,31 @@
 'use strict';
 
 // ============================================
+// GLOBAL ERROR HANDLER
+// ============================================
+window.onerror = function(msg, url, line, col, error) {
+  console.error('Global error:', msg, 'at', line+':'+col, error);
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = '⚠️ Script error: ' + (msg || 'Unknown') + ' (line ' + line + ')';
+    toast.className = 'toast error show';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), 8000);
+  }
+};
+
+window.addEventListener('unhandledrejection', function(e) {
+  console.error('Unhandled promise rejection:', e.reason);
+  const toast = document.getElementById('toast');
+  if (toast) {
+    toast.textContent = '⚠️ API error: ' + (e.reason?.message || 'Request failed') + '. Try again.';
+    toast.className = 'toast error show';
+    clearTimeout(toast._timer);
+    toast._timer = setTimeout(() => toast.classList.remove('show'), 8000);
+  }
+});
+
+// ============================================
 // API CONFIGURATION
 // ============================================
 // Backend API URL.
@@ -113,12 +138,407 @@ const confirmCancel = document.getElementById('confirm-cancel');
 const venueSelect = document.getElementById('venue-name');
 const sportSelect = document.getElementById('sport-type');
 
+// Dark mode
+const btnTheme = document.getElementById('btn-theme');
+
+// Voice input
+const btnMic = document.getElementById('btn-mic');
+const customerNameInput = document.getElementById('customer-name');
+
+// Recent clients
+const recentClientsEl = document.getElementById('recent-clients');
+const recentClientsList = document.getElementById('recent-clients-list');
+const recentClientsClear = document.getElementById('recent-clients-clear');
+
+// Loading overlays
+const resultsLoading = document.getElementById('results-loading');
+const bookingsLoading = document.getElementById('bookings-loading');
+
 // ============================================
 // STATE
 // ============================================
 const VENUES_KEY = 'byp_venues';
+const RECENT_CLIENTS_KEY = 'byp_recent_clients';
+const THEME_KEY = 'byp_theme';
+const MAX_RECENT_CLIENTS = 10;
 
 const ALL_SPORTS = ['Cricket', 'Football', 'Pickleball', 'Badminton', 'Tennis', 'Other'];
+
+// Pricing constants (used by calculatePrice if called directly)
+const PRICING = { cricket: 1500, football: 1200, pickleball: 800, badminton: 600, tennis: 1000 };
+const DEFAULT_RATE = 1000;
+const GST_RATE = 0.18;
+
+// ============================================
+// INDEXED DB — Offline Local Storage
+// ============================================
+
+const DB_NAME = 'byp_offline';
+const DB_VERSION = 1;
+const STORE_BOOKINGS = 'bookings';
+const STORE_SYNC_QUEUE = 'sync_queue';
+
+function openDB() {
+  return new Promise(function(resolve, reject) {
+    var request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onupgradeneeded = function(e) {
+      var db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_BOOKINGS)) {
+        var store = db.createObjectStore(STORE_BOOKINGS, { keyPath: 'booking_id' });
+        store.createIndex('preferred_date', 'preferred_date', { unique: false });
+        store.createIndex('venue_name', 'venue_name', { unique: false });
+        store.createIndex('created_at', 'created_at', { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_SYNC_QUEUE)) {
+        var queue = db.createObjectStore(STORE_SYNC_QUEUE, { keyPath: 'id', autoIncrement: true });
+        queue.createIndex('type', 'type', { unique: false });
+      }
+    };
+    request.onsuccess = function(e) { resolve(e.target.result); };
+    request.onerror = function(e) { reject(e.target.error); };
+  });
+}
+
+function dbAdd(storeName, data) {
+  return openDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(storeName, 'readwrite');
+      var store = tx.objectStore(storeName);
+      var req = store.add(data);
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error); };
+      tx.oncomplete = function() { db.close(); };
+    });
+  });
+}
+
+function dbPut(storeName, data) {
+  return openDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(storeName, 'readwrite');
+      var store = tx.objectStore(storeName);
+      var req = store.put(data);
+      req.onsuccess = function() { resolve(req.result); };
+      req.onerror = function() { reject(req.error); };
+      tx.oncomplete = function() { db.close(); };
+    });
+  });
+}
+
+function dbGetAll(storeName) {
+  return openDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(storeName, 'readonly');
+      var store = tx.objectStore(storeName);
+      var req = store.getAll();
+      req.onsuccess = function() { resolve(req.result || []); };
+      req.onerror = function() { reject(req.error); };
+      tx.oncomplete = function() { db.close(); };
+    });
+  });
+}
+
+function dbDelete(storeName, key) {
+  return openDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(storeName, 'readwrite');
+      var store = tx.objectStore(storeName);
+      var req = store.delete(key);
+      req.onsuccess = function() { resolve(); };
+      req.onerror = function() { reject(req.error); };
+      tx.oncomplete = function() { db.close(); };
+    });
+  });
+}
+
+function dbClear(storeName) {
+  return openDB().then(function(db) {
+    return new Promise(function(resolve, reject) {
+      var tx = db.transaction(storeName, 'readwrite');
+      var store = tx.objectStore(storeName);
+      var req = store.clear();
+      req.onsuccess = function() { resolve(); };
+      req.onerror = function() { reject(req.error); };
+      tx.oncomplete = function() { db.close(); };
+    });
+  });
+}
+
+// ---- Local booking helpers ----
+
+function getLocalBookings() {
+  return dbGetAll(STORE_BOOKINGS);
+}
+
+function saveLocalBooking(booking) {
+  return dbPut(STORE_BOOKINGS, booking);
+}
+
+function deleteLocalBooking(bookingId) {
+  return dbDelete(STORE_BOOKINGS, bookingId);
+}
+
+// ---- Sync Queue ----
+
+function addToSyncQueue(item) {
+  item.status = 'pending';
+  item.created_at = new Date().toISOString();
+  item.retries = 0;
+  return dbAdd(STORE_SYNC_QUEUE, item);
+}
+
+function getSyncQueue() {
+  return dbGetAll(STORE_SYNC_QUEUE);
+}
+
+function removeFromSyncQueue(id) {
+  return dbDelete(STORE_SYNC_QUEUE, id);
+}
+
+function clearSyncQueue() {
+  return dbClear(STORE_SYNC_QUEUE);
+}
+
+// ---- Process Sync Queue (send pending offline bookings to API) ----
+
+async function processSyncQueue() {
+  var items = await getSyncQueue();
+  if (items.length === 0) return { synced: 0, failed: 0 };
+
+  var synced = 0, failed = 0;
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    try {
+      if (item.type === 'create_booking') {
+        await apiPost('/api/bookings', item.data);
+      } else if (item.type === 'delete_booking') {
+        await apiDelete('/api/bookings/' + encodeURIComponent(item.data.booking_id));
+      }
+      await removeFromSyncQueue(item.id);
+      synced++;
+    } catch (e) {
+      item.retries = (item.retries || 0) + 1;
+      if (item.retries >= 5) {
+        // Give up after 5 retries — user can manually retry
+        await removeFromSyncQueue(item.id);
+        failed++;
+        console.warn('Sync failed after 5 retries, dropping:', item.id, e);
+      } else {
+        failed++;
+        console.warn('Sync retry', item.retries, 'failed for', item.id, e);
+      }
+    }
+  }
+  return { synced: synced, failed: failed };
+}
+
+// ============================================
+// CONNECTIVITY DETECTION
+// ============================================
+
+var _online = navigator.onLine;
+var connectivityIndicator = null;
+
+function createConnectivityIndicator() {
+  if (connectivityIndicator) return;
+  connectivityIndicator = document.createElement('div');
+  connectivityIndicator.id = 'connectivity-indicator';
+  connectivityIndicator.className = 'connectivity-indicator';
+  var dot = document.createElement('span');
+  dot.className = 'conn-dot';
+  var label = document.createElement('span');
+  label.className = 'conn-label';
+  connectivityIndicator.appendChild(dot);
+  connectivityIndicator.appendChild(label);
+  var navStats = document.querySelector('.nav-stats');
+  if (navStats) {
+    navStats.appendChild(connectivityIndicator);
+  }
+  updateConnectivityStatus();
+}
+
+function updateConnectivityStatus() {
+  _online = navigator.onLine;
+  if (!connectivityIndicator) return;
+  var dot = connectivityIndicator.querySelector('.conn-dot');
+  var label = connectivityIndicator.querySelector('.conn-label');
+  if (!dot || !label) return;
+
+  if (_online) {
+    dot.className = 'conn-dot online';
+    label.textContent = 'Online';
+    connectivityIndicator.className = 'connectivity-indicator online';
+  } else {
+    dot.className = 'conn-dot offline';
+    label.textContent = 'Offline';
+    connectivityIndicator.className = 'connectivity-indicator offline';
+  }
+}
+
+function isOnline() {
+  return navigator.onLine;
+}
+
+// Called when connection returns — process sync queue
+async function onConnectionRestored() {
+  updateConnectivityStatus();
+  showToast('📡 Connection restored — syncing...', 'success');
+  var result = await processSyncQueue();
+  if (result.synced > 0 || result.failed > 0) {
+    showToast(
+      'Sync complete: ' + result.synced + ' synced' +
+      (result.failed > 0 ? ', ' + result.failed + ' failed' : ''),
+      result.failed > 0 ? 'warning' : 'success'
+    );
+    renderBookingsList();
+    updateBookingCount();
+  } else {
+    showToast('📡 Connection restored', 'success');
+  }
+}
+
+// ============================================
+// DARK MODE TOGGLE
+// ============================================
+
+function loadTheme() {
+  var saved = localStorage.getItem(THEME_KEY);
+  if (saved === 'dark' || (!saved && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    if (!saved) localStorage.setItem(THEME_KEY, 'dark');
+  } else if (saved === 'dark') {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }
+}
+
+function toggleTheme() {
+  var isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+  if (isDark) {
+    document.documentElement.removeAttribute('data-theme');
+    localStorage.setItem(THEME_KEY, 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    localStorage.setItem(THEME_KEY, 'dark');
+  }
+}
+
+// ============================================
+// VOICE INPUT (Web Speech API)
+// ============================================
+
+function initVoiceInput() {
+  if (!btnMic || !customerNameInput) return;
+
+  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    btnMic.style.display = 'none';
+    return;
+  }
+
+  var recognition = new SpeechRecognition();
+  recognition.lang = 'en-IN';
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.maxAlternatives = 1;
+
+  btnMic.addEventListener('click', function() {
+    if (btnMic.classList.contains('listening')) {
+      recognition.abort();
+      btnMic.classList.remove('listening');
+      return;
+    }
+
+    try {
+      recognition.start();
+      btnMic.classList.add('listening');
+    } catch (e) {
+      console.warn('Speech recognition error:', e);
+    }
+  });
+
+  recognition.addEventListener('result', function(e) {
+    var transcript = e.results[0][0].transcript;
+    customerNameInput.value = transcript;
+    customerNameInput.classList.remove('error');
+    // Trigger input event for any listeners
+    customerNameInput.dispatchEvent(new Event('input'));
+  });
+
+  recognition.addEventListener('end', function() {
+    btnMic.classList.remove('listening');
+  });
+
+  recognition.addEventListener('error', function(e) {
+    btnMic.classList.remove('listening');
+    if (e.error !== 'no-speech' && e.error !== 'aborted') {
+      console.warn('Speech recognition error:', e.error);
+    }
+  });
+}
+
+// ============================================
+// RECENT CLIENTS
+// ============================================
+
+function getRecentClients() {
+  try {
+    var raw = localStorage.getItem(RECENT_CLIENTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveRecentClient(name, phone, email) {
+  if (!name || !name.trim()) return;
+  var clients = getRecentClients();
+  // Remove existing entry with same name (case-insensitive)
+  clients = clients.filter(function(c) {
+    return c.name.toLowerCase() !== name.trim().toLowerCase();
+  });
+  // Add to front
+  clients.unshift({ name: name.trim(), phone: phone || '', email: email || '' });
+  // Keep max
+  if (clients.length > MAX_RECENT_CLIENTS) {
+    clients = clients.slice(0, MAX_RECENT_CLIENTS);
+  }
+  localStorage.setItem(RECENT_CLIENTS_KEY, JSON.stringify(clients));
+  renderRecentClients();
+}
+
+function renderRecentClients() {
+  var clients = getRecentClients();
+  if (clients.length === 0) {
+    recentClientsEl.classList.remove('visible');
+    return;
+  }
+  recentClientsEl.classList.add('visible');
+
+  var html = '';
+  clients.forEach(function(c) {
+    var phoneDisplay = c.phone ? '<span class="chip-phone">' + escapeHtml(c.phone) + '</span>' : '';
+    html += '<div class="recent-client-chip" data-name="' + escapeHtml(c.name) + '" ' +
+      'data-phone="' + escapeHtml(c.phone) + '" ' +
+      'data-email="' + escapeHtml(c.email) + '">' +
+      '<span class="chip-name">' + escapeHtml(c.name) + '</span>' +
+      phoneDisplay +
+    '</div>';
+  });
+  recentClientsList.innerHTML = html;
+
+  // Tap to auto-fill
+  recentClientsList.querySelectorAll('.recent-client-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      document.getElementById('customer-name').value = chip.dataset.name;
+      document.getElementById('client-email').value = chip.dataset.email;
+      document.getElementById('client-phone').value = chip.dataset.phone;
+      clearErrors();
+      showToast('Client info filled: ' + chip.dataset.name, 'success');
+      // Scroll to top of form
+      document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth' });
+    });
+  });
+}
 
 // ============================================
 // VENUE HELPERS (localStorage only)
@@ -138,14 +558,27 @@ function saveVenues(venues) {
 }
 
 function updateBookingCount() {
-  // Fetch count from API
-  apiGet('/api/bookings')
-    .then(data => {
-      totalBookingsEl.textContent = data.count || 0;
-    })
-    .catch(() => {
-      totalBookingsEl.textContent = '?';
-    });
+  if (isOnline()) {
+    // Fetch count from API
+    apiGet('/api/bookings')
+      .then(data => {
+        totalBookingsEl.textContent = data.count || 0;
+      })
+      .catch(() => {
+        // Fall back to local count
+        updateLocalBookingCount();
+      });
+  } else {
+    updateLocalBookingCount();
+  }
+}
+
+function updateLocalBookingCount() {
+  getLocalBookings().then(function(bookings) {
+    totalBookingsEl.textContent = bookings.length || 0;
+  }).catch(function() {
+    totalBookingsEl.textContent = '?';
+  });
 }
 
 function showToast(message, type = 'success') {
@@ -410,8 +843,95 @@ tabs.forEach(tab => {
 
 let _cachedBookings = [];
 
+async function renderLocalBookingsTable(bookings, search) {
+  var filtered = bookings;
+  if (search) {
+    filtered = bookings.filter(function(b) {
+      return (b.client_name || '').toLowerCase().includes(search) ||
+        (b.booking_id || '').toLowerCase().includes(search) ||
+        (b.venue_name || '').toLowerCase().includes(search) ||
+        (b.service_type || '').toLowerCase().includes(search);
+    });
+  }
+
+  bookingsCount.textContent = filtered.length + ' booking' + (filtered.length !== 1 ? 's' : '') + ' found (offline)';
+
+  var totalRevenue = filtered.reduce(function(sum, b) { return sum + (parseInt(b.total_amount) || 0); }, 0);
+  var onlineCount = filtered.filter(function(b) { return b.payment_status === 'Paid'; }).length;
+  var venuePayCount = filtered.filter(function(b) { return b.payment_status !== 'Paid'; }).length;
+  var uniqueVenues = new Set(filtered.map(function(b) { return b.venue_name || b.service_type; })).size;
+
+  statsRevenue.textContent = '₹' + totalRevenue.toLocaleString('en-IN');
+  statsOnline.textContent = onlineCount;
+  statsVenue.textContent = venuePayCount;
+  statsVenuesCount.textContent = uniqueVenues;
+
+  if (filtered.length === 0) {
+    bookingsTbody.innerHTML = '';
+    tableEmpty.style.display = 'flex';
+    return;
+  }
+
+  tableEmpty.style.display = 'none';
+
+  var html = '';
+  filtered.forEach(function(b) {
+    var dateStr = formatDate(b.preferred_date);
+    var timeStr = (b.preferred_time || '—') + (b.end_time ? ' — ' + b.end_time : '');
+    var amount = b.total_amount ? '₹' + parseInt(b.total_amount).toLocaleString('en-IN') : '—';
+    var isPaid = b.payment_status === 'Paid';
+    var badgeClass = isPaid ? 'paid' : 'venue';
+
+    html += '<tr>' +
+      '<td class="booking-id-cell">' + escapeHtml(b.booking_id || '—') + '</td>' +
+      '<td>' + escapeHtml(b.client_name || '—') + '</td>' +
+      '<td>' + escapeHtml(b.service_type || '—') + '</td>' +
+      '<td>' + escapeHtml(b.venue_name || '—') + '</td>' +
+      '<td>' + dateStr + '</td>' +
+      '<td>' + timeStr + '</td>' +
+      '<td class="amount-cell">' + amount + '</td>' +
+      '<td><span class="payment-badge ' + badgeClass + '">' + escapeHtml(b.payment_status || '—') + '</span></td>' +
+      '<td><button class="btn-delete-row" data-id="' + escapeHtml(b.booking_id) + '" title="Delete booking">✕</button></td>' +
+    '</tr>';
+  });
+
+  bookingsTbody.innerHTML = html;
+
+  bookingsTbody.querySelectorAll('.btn-delete-row').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var id = btn.dataset.id;
+      confirmThenDelete('Delete booking ' + id + '?', 'This will remove the booking from local storage and queue deletion.', async function() {
+        try {
+          await deleteLocalBooking(id);
+          if (isOnline()) {
+            try {
+              await apiDelete('/api/bookings/' + encodeURIComponent(id));
+            } catch (e) {
+              addToSyncQueue({ type: 'delete_booking', data: { booking_id: id } }).catch(function(err) {
+                console.warn('Failed to enqueue sync item:', err);
+              });
+            }
+          } else {
+            addToSyncQueue({ type: 'delete_booking', data: { booking_id: id } }).catch(function(err) {
+              console.warn('Failed to enqueue sync item:', err);
+            });
+          }
+          renderBookingsList();
+          updateBookingCount();
+          showToast('Booking cancelled', 'success');
+        } catch (e) {
+          showToast('Failed to cancel booking', 'error');
+        }
+      });
+    });
+  });
+}
+
 async function renderBookingsList(filterText) {
   const search = (filterText || bookingsSearch.value || '').toLowerCase().trim();
+
+  // Show loading state
+  if (bookingsLoading) bookingsLoading.classList.add('show');
 
   try {
     const data = await apiGet('/api/bookings');
@@ -493,10 +1013,27 @@ async function renderBookingsList(filterText) {
       });
     });
   } catch (err) {
-    console.error('Failed to fetch bookings:', err);
+    console.warn('API fetch failed, trying local data:', err.message);
+    // Fall back to IndexedDB for offline mode
+    try {
+      const localBookings = await getLocalBookings();
+      if (localBookings && localBookings.length > 0) {
+        var sorted = localBookings.slice().sort(function(a, b) {
+          return (b.created_at || '').localeCompare(a.created_at || '');
+        });
+        _cachedBookings = sorted;
+        renderLocalBookingsTable(sorted, search);
+        return;
+      }
+    } catch (localErr) {
+      console.warn('Local data also failed:', localErr);
+    }
     showToast('Could not connect to server. Is the API running?', 'error');
     bookingsTbody.innerHTML = '';
     tableEmpty.style.display = 'flex';
+  } finally {
+    // Hide loading state
+    if (bookingsLoading) bookingsLoading.classList.remove('show');
   }
 }
 
@@ -713,20 +1250,22 @@ function clearErrors() {
 // STEP 3 & 4: CHECK AVAILABILITY & VALIDATE SLOT
 // ============================================
 
-function checkSlotAvailability(data) {
-  const existing = getBookings();
-  const startMinutes = timeToMinutes(data.start_time);
-  const endMinutes = timeToMinutes(data.end_time);
+async function checkSlotAvailabilityAsync(data, bookingsList) {
+  var existing = bookingsList || await getBookingsAsync();
+  var startMinutes = timeToMinutes(data.start_time || data.preferred_time);
+  var endMinutes = timeToMinutes(data.end_time);
 
-  for (const booking of existing) {
+  for (var i = 0; i < existing.length; i++) {
+    var booking = existing[i];
     if (
-      booking.venue_name?.toLowerCase() === data.venue_name.toLowerCase() &&
-      booking.booking_date === data.booking_date
+      booking.venue_name && booking.venue_name.toLowerCase() === (data.venue_name || '').toLowerCase() &&
+      (booking.preferred_date || booking.booking_date) === (data.preferred_date || data.booking_date) &&
+      booking.status !== 'CANCELLED'
     ) {
-      const bStart = timeToMinutes(booking.start_time);
-      const bEnd = timeToMinutes(booking.end_time);
+      var bStart = timeToMinutes(booking.preferred_time || booking.start_time);
+      var bEnd = timeToMinutes(booking.end_time);
 
-      const overlaps =
+      var overlaps =
         (startMinutes >= bStart && startMinutes < bEnd) ||
         (endMinutes > bStart && endMinutes <= bEnd) ||
         (startMinutes <= bStart && endMinutes >= bEnd);
@@ -735,8 +1274,8 @@ function checkSlotAvailability(data) {
         return {
           available: false,
           conflict: {
-            customer: booking.customer_name,
-            start: booking.start_time,
+            customer: booking.client_name || booking.customer_name,
+            start: booking.preferred_time || booking.start_time,
             end: booking.end_time,
           },
         };
@@ -863,6 +1402,7 @@ async function executeWorkflow() {
   btnSubmit.disabled = true;
   btnSubmit.classList.add('loading');
   btnSubmit.querySelector('.btn-text').textContent = 'Processing...';
+  if (resultsLoading) resultsLoading.classList.add('show');
 
   try {
     advancePipeline('parse');
@@ -881,7 +1421,7 @@ async function executeWorkflow() {
       return;
     }
 
-    // Call the backend API
+    // Check connectivity — try API if online, fall back to local if offline
     advancePipeline('availability');
     await sleep(200);
 
@@ -901,51 +1441,174 @@ async function executeWorkflow() {
       message: '',
     };
 
-    const result = await apiPost('/api/bookings', apiPayload);
+    if (isOnline()) {
+      // ── ONLINE: Call the backend API ──
+      const result = await apiPost('/api/bookings', apiPayload);
 
-    if (!result.success) {
-      failPipeline('availability');
+      if (!result.success) {
+        failPipeline('availability');
 
-      if (result.booking && result.booking.alternative_slots && result.booking.alternative_slots.length > 0) {
-        const altSlots = result.booking.alternative_slots;
-        const altList = altSlots.map(s => `  • ${s.start_time} - ${s.end_time}`).join('\n');
-        errorMsg.textContent = `Sorry! This slot is already booked.\n\nAvailable alternatives:\n${altList}\n\nPlease try a different time.`;
-      } else {
-        errorMsg.textContent = `Booking failed: ${result.message || 'Slot not available'}`;
+        if (result.booking && result.booking.alternative_slots && result.booking.alternative_slots.length > 0) {
+          const altSlots = result.booking.alternative_slots;
+          const altList = altSlots.map(s => `  • ${s.start_time} - ${s.end_time}`).join('\n');
+          errorMsg.textContent = `Sorry! This slot is already booked.\n\nAvailable alternatives:\n${altList}\n\nPlease try a different time.`;
+        } else {
+          errorMsg.textContent = `Booking failed: ${result.message || 'Slot not available'}`;
+        }
+
+        errorCard.style.display = 'block';
+        showToast('Slot not available', 'error');
+        resetUi();
+        return;
       }
 
-      errorCard.style.display = 'block';
-      showToast('Slot not available', 'error');
-      resetUi();
-      return;
+      advancePipeline('pricing');
+      await sleep(200);
+      advancePipeline('booking');
+      await sleep(200);
+      advancePipeline('invoice');
+      await sleep(200);
+
+      // Save to IndexedDB as backup
+      const bookingData = {
+        booking_id: result.booking_id || (result.booking && result.booking.booking_id),
+        client_name: apiPayload.name,
+        client_email: apiPayload.email,
+        client_phone: apiPayload.phone,
+        service_type: apiPayload.service_type,
+        preferred_date: apiPayload.preferred_date,
+        preferred_time: apiPayload.preferred_time,
+        end_time: apiPayload.end_time,
+        venue_name: apiPayload.venue_name,
+        payment_mode: apiPayload.payment_mode,
+        payment_status: result.booking && result.booking.payment_status ? result.booking.payment_status : (apiPayload.payment_mode === 'Online' ? 'Paid' : 'Pay at Venue'),
+        total_amount: result.booking && result.booking.total_amount ? String(result.booking.total_amount) : '',
+        rate_per_hour: result.booking && result.booking.rate_per_hour ? result.booking.rate_per_hour : 0,
+        duration: result.booking && result.booking.duration ? result.booking.duration : 1,
+        base_amount: result.booking && result.booking.base_amount ? result.booking.base_amount : 0,
+        gst_amount: result.booking && result.booking.gst_amount ? result.booking.gst_amount : 0,
+        status: 'CONFIRMED',
+        created_at: new Date().toISOString(),
+      };
+      saveBooking(bookingData);
+
+      // Use returned booking data for invoice
+      const booking = result.booking || bookingData;
+      renderInvoice({
+        booking_id: result.booking_id || booking.booking_id,
+        customer_name: booking.client_name || apiPayload.name,
+        sport_type: booking.service_type || apiPayload.service_type,
+        venue_name: booking.venue_name || apiPayload.venue_name,
+        booking_date: booking.preferred_date || apiPayload.preferred_date,
+        start_time: booking.preferred_time || apiPayload.preferred_time,
+        end_time: booking.end_time || '',
+        duration: booking.duration || 1,
+        rate_per_hour: booking.rate_per_hour || 1000,
+        base_amount: booking.base_amount || 0,
+        gst_amount: booking.gst_amount || 0,
+        total_amount: booking.total_amount || 0,
+        payment_status: booking.payment_status || 'Paid',
+      });
+    } else {
+      // ── OFFLINE: Process locally ──
+      // Check availability from IndexedDB using shared helper
+      var availabilityCheck = await checkSlotAvailabilityAsync({
+        venue_name: apiPayload.venue_name,
+        preferred_date: apiPayload.preferred_date,
+        preferred_time: apiPayload.preferred_time,
+        end_time: apiPayload.end_time,
+      });
+
+      if (!availabilityCheck.available) {
+        failPipeline('availability');
+        errorMsg.textContent = 'Sorry! This slot is already booked (offline mode). Please try a different time.';
+        errorCard.style.display = 'block';
+        showToast('Slot not available', 'error');
+        resetUi();
+        return;
+      }
+
+      advancePipeline('pricing');
+      await sleep(200);
+
+      // Calculate price locally
+      var sportKey = apiPayload.service_type.toLowerCase();
+      var ratePerHour = PRICING[sportKey] || DEFAULT_RATE;
+      var sh2 = parseInt(apiPayload.preferred_time.split(':')[0]);
+      var sm2 = parseInt(apiPayload.preferred_time.split(':')[1]);
+      var eh2 = parseInt(apiPayload.end_time.split(':')[0]);
+      var em2 = parseInt(apiPayload.end_time.split(':')[1]);
+      var duration = Math.max((eh2 + em2 / 60) - (sh2 + sm2 / 60), 0.5);
+      var baseAmount = Math.round(ratePerHour * duration);
+      var gstAmount = Math.round(baseAmount * GST_RATE);
+      var totalAmount = Math.round(baseAmount + gstAmount);
+
+      // Generate booking ID
+      var bookingId = 'BYP-' + Date.now();
+
+      // Set payment status
+      var paymentStatus = apiPayload.payment_mode === 'Online' ? 'Paid' : 'Pay at Venue';
+
+      var offlineBooking = {
+        booking_id: bookingId,
+        client_name: apiPayload.name,
+        client_email: apiPayload.email,
+        client_phone: apiPayload.phone,
+        service_type: apiPayload.service_type,
+        preferred_date: apiPayload.preferred_date,
+        preferred_time: apiPayload.preferred_time,
+        end_time: apiPayload.end_time,
+        venue_name: apiPayload.venue_name,
+        payment_mode: apiPayload.payment_mode,
+        payment_status: paymentStatus,
+        total_amount: String(totalAmount),
+        rate_per_hour: ratePerHour,
+        duration: duration,
+        base_amount: baseAmount,
+        gst_amount: gstAmount,
+        status: 'CONFIRMED',
+        created_at: new Date().toISOString(),
+      };
+
+      // Save to IndexedDB
+      saveBooking(offlineBooking);
+
+      // Add to sync queue
+      addToSyncQueue({
+        type: 'create_booking',
+        data: apiPayload,
+      }).catch(function(err) {
+        console.warn('Failed to enqueue sync item:', err);
+      });
+
+      advancePipeline('booking');
+      await sleep(200);
+      advancePipeline('invoice');
+      await sleep(200);
+
+      renderInvoice({
+        booking_id: bookingId,
+        customer_name: apiPayload.name,
+        sport_type: apiPayload.service_type,
+        venue_name: apiPayload.venue_name,
+        booking_date: apiPayload.preferred_date,
+        start_time: apiPayload.preferred_time,
+        end_time: apiPayload.end_time,
+        duration: duration,
+        rate_per_hour: ratePerHour,
+        base_amount: baseAmount,
+        gst_amount: gstAmount,
+        total_amount: totalAmount,
+        payment_status: paymentStatus,
+      });
     }
 
-    advancePipeline('pricing');
-    await sleep(200);
-
-    advancePipeline('booking');
-    await sleep(200);
-
-    advancePipeline('invoice');
-    await sleep(200);
-
-    // Use returned booking data for invoice
-    const booking = result.booking;
-    renderInvoice({
-      booking_id: result.booking_id || booking.booking_id,
-      customer_name: booking.client_name || apiPayload.name,
-      sport_type: booking.service_type || apiPayload.service_type,
-      venue_name: booking.venue_name || apiPayload.venue_name,
-      booking_date: booking.preferred_date || apiPayload.preferred_date,
-      start_time: booking.preferred_time || apiPayload.preferred_time,
-      end_time: booking.end_time || '',
-      duration: booking.duration || 1,
-      rate_per_hour: booking.rate_per_hour || 1000,
-      base_amount: booking.base_amount || 0,
-      gst_amount: booking.gst_amount || 0,
-      total_amount: booking.total_amount || 0,
-      payment_status: booking.payment_status || 'Paid',
-    });
+    // ── Common: Save to recent clients and show invoice ──
+    saveRecentClient(
+      parsedData.customer_name,
+      sanitizedPhone,
+      parsedData.client_email
+    );
 
     invoiceContainer.style.display = 'block';
     invActions.style.display = 'flex';
@@ -959,6 +1622,7 @@ async function executeWorkflow() {
     showToast('Something went wrong — see error details below.', 'error');
   } finally {
     resetUi();
+    if (resultsLoading) resultsLoading.classList.remove('show');
   }
 }
 
@@ -1058,6 +1722,10 @@ function applySample(key) {
 // SEED DEFAULT VENUES
 // ============================================
 
+// ============================================
+// SEED DEFAULT VENUES INTO LOCALSTORAGE
+// ============================================
+
 function seedDefaultVenues() {
   const venues = getVenues();
   if (venues.length === 0) {
@@ -1071,6 +1739,32 @@ function seedDefaultVenues() {
     saveVenues(defaults);
   }
 }
+
+// ============================================
+// BOOKING HELPERS (backed by IndexedDB)
+// ============================================
+
+function getBookings() {
+  return [];
+}
+
+async function getBookingsAsync() {
+  try {
+    return await getLocalBookings();
+  } catch (e) {
+    console.warn('IndexedDB read failed:', e);
+    return [];
+  }
+}
+
+function saveBooking(data) {
+  saveLocalBooking(data).catch(function(e) {
+    console.warn('IndexedDB save failed:', e);
+  });
+  return data;
+}
+
+function generateBookingId() { return 'BYP-' + Date.now(); }
 
 // ============================================
 // EVENT LISTENERS
@@ -1113,106 +1807,524 @@ document.getElementById('btn-new').addEventListener('click', () => {
   document.getElementById('form-panel').scrollIntoView({ behavior: 'smooth' });
 });
 
-// PDF download
+// PDF download — uses native browser Print dialog (works on all devices)
 document.getElementById('btn-pdf').addEventListener('click', () => {
-  const element = document.getElementById('invoice-card');
-  const btn = document.getElementById('btn-pdf');
-  const filename = `invoice-${invBookingId.textContent}.pdf`;
-
-  if (typeof html2pdf !== 'undefined') {
-    const opt = {
-      margin:        [0.5, 0.5, 0.5, 0.5],
-      filename:      filename,
-      image:         { type: 'jpeg', quality: 0.98 },
-      html2canvas:   { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF:         { unit: 'in', format: 'a4', orientation: 'portrait' },
-      pagebreak:     { mode: 'avoid-all' },
-    };
-
-    btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Generating...';
-
-    html2pdf().set(opt).from(element).save().then(() => {
-      btn.disabled = false;
-      restorePdfButton(btn);
-      showToast('PDF downloaded!', 'success');
-    }).catch((err) => {
-      console.error('html2pdf error:', err);
-      btn.disabled = false;
-      restorePdfButton(btn);
-      showToast('PDF failed — trying print instead.', 'error');
-      printInvoice();
-    });
-  } else {
-    printInvoice();
-  }
+  downloadInvoicePdf();
 });
 
-function restorePdfButton(btn) {
-  btn.innerHTML = `
-    <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
-    Download PDF
-  `;
+// Share Invoice via Web Share API (native share sheet on phones)
+document.getElementById('btn-share').addEventListener('click', () => {
+  shareInvoice();
+});
+
+function shareInvoice() {
+  // Read invoice data from the DOM
+  var shareText = [
+    '🧾 *Book Your Pitch — Invoice*',
+    '',
+    'Booking ID: ' + invBookingId.textContent,
+    'Customer: ' + invCustomer.textContent,
+    'Sport: ' + invSport.textContent,
+    'Venue: ' + invVenue.textContent,
+    'Date: ' + invDate.textContent,
+    'Time: ' + invTime.textContent,
+    'Duration: ' + invDuration.textContent,
+    '',
+    'Base Amount: ' + invBase.textContent,
+    'GST (18%): ' + invGst.textContent,
+    '*Total: ' + invTotal.textContent + '*',
+    'Payment: ' + invPaymentBadge.textContent,
+    '',
+    'Thank you for booking with us!',
+  ].join('\n');
+
+  // Check if Web Share API is available (mobile browsers)
+  if (navigator.share) {
+    navigator.share({
+      title: 'Booking Invoice ' + invBookingId.textContent,
+      text: shareText,
+    }).then(function() {
+      showToast('Invoice shared!', 'success');
+    }).catch(function(err) {
+      // User cancelled — don't show error
+      if (err.name !== 'AbortError') {
+        console.warn('Share failed:', err);
+        fallbackShare(shareText);
+      }
+    });
+  } else {
+    // Web Share not available — copy to clipboard as fallback
+    fallbackShare(shareText);
+  }
 }
 
-function printInvoice() {
-  const printWin = window.open('', '_blank');
-  if (!printWin) {
-    showToast('Please allow pop-ups to print the invoice.', 'error');
-    return;
+function fallbackShare(text) {
+  // Fallback: copy invoice details to clipboard
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function() {
+      showToast('Invoice copied to clipboard!', 'success');
+    }).catch(function() {
+      showToast('Could not share. Use screenshot instead.', 'warning');
+    });
+  } else {
+    // Last resort: prompt the user to take a screenshot
+    showToast('Take a screenshot to share the invoice', 'warning');
+  }
+}
+
+function downloadInvoicePdf() {
+  // Read invoice data from the DOM
+  const bookingData = {
+    bookingId: invBookingId.textContent,
+    customer: invCustomer.textContent,
+    sport: invSport.textContent,
+    venue: invVenue.textContent,
+    date: invDate.textContent,
+    time: invTime.textContent,
+    duration: invDuration.textContent,
+    rateText: invRate.textContent,
+    baseText: invBase.textContent,
+    gstText: invGst.textContent,
+    totalText: invTotal.textContent,
+    paymentStatus: invPaymentBadge.textContent,
+  };
+
+  showToast('Opening print dialog...', 'success');
+
+  // Build the standalone invoice HTML
+  const invoiceHtml = buildInvoiceHtml(bookingData);
+
+  // Hide all app content so the print view is clean
+  var tabs = document.querySelectorAll('.tab-content');
+  var nav = document.querySelector('nav');
+  var hiddenElements = [];
+
+  tabs.forEach(function(tc) {
+    if (tc.style.display !== 'none') {
+      hiddenElements.push({ el: tc, display: tc.style.display });
+      tc.style.display = 'none';
+    }
+  });
+
+  if (nav) {
+    hiddenElements.push({ el: nav, display: nav.style.display });
+    nav.style.display = 'none';
   }
 
-  const card = document.getElementById('invoice-card');
-  const clone = card.cloneNode(true);
+  // Create a visible full-screen container with the invoice
+  var container = document.createElement('div');
+  container.id = 'pdf-print-content';
+  container.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;z-index:999999;background:#fff;overflow:auto;-webkit-overflow-scrolling:touch;';
+  document.body.appendChild(container);
 
-  printWin.document.write(`
-    <!DOCTYPE html>
-    <html>
-    <head>
-      <title>Invoice ${invBookingId.textContent}</title>
-      <link rel="preconnect" href="https://fonts.googleapis.com">
-      <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-      <link href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-      <style>
-        body { background: #ffffff; font-family: 'DM Sans', sans-serif; padding: 40px; }
-        ${Array.from(document.styleSheets).reduce((css, sheet) => {
-          try {
-            const rules = sheet.cssRules || sheet.rules;
-            if (rules) {
-              for (let r of rules) css += r.cssText;
+  // Inject the standalone invoice HTML
+  // (The html/head/body tags are stripped by the browser, but styles apply correctly)
+  container.innerHTML = invoiceHtml;
+
+  // Add print CSS overrides for clean print output
+  var style = document.createElement('style');
+  style.id = 'pdf-print-overrides';
+  style.textContent = (
+    '@media print {\n' +
+    '  body > *:not(#pdf-print-content) { display: none !important; }\n' +
+    '  #pdf-print-content {' +
+    '    display: block !important;' +
+    '    position: static !important;' +
+    '    width: 100% !important;' +
+    '    height: auto !important;' +
+    '    overflow: visible !important;' +
+    '  }\n' +
+    '}'
+  );
+  document.head.appendChild(style);
+
+  // Scroll to top so the invoice is at the top of the viewport
+  window.scrollTo(0, 0);
+  container.scrollTop = 0;
+
+  // Wait for fonts and rendering to finish, then print
+  // document.fonts.ready resolves immediately for system fonts but waits for any web fonts
+  document.fonts.ready.then(function() {
+    // Small extra delay to ensure layout is complete
+    setTimeout(function() {
+      window.print();
+
+      function cleanup() {
+        // Remove the print container and style
+        if (container.parentNode) container.parentNode.removeChild(container);
+        if (style.parentNode) style.parentNode.removeChild(style);
+
+        // Restore all hidden elements
+        hiddenElements.forEach(function(item) {
+          item.el.style.display = item.display;
+        });
+      }
+
+      // Listen for afterprint
+      try {
+        var mq = window.matchMedia('print');
+        if (mq && mq.addListener) {
+          mq.addListener(function handler(mql) {
+            if (!mql.matches) {
+              mq.removeListener(handler);
+              setTimeout(cleanup, 300);
             }
-          } catch(e) {}
-          return css;
-        }, '')}
-        .inv-card-print { max-width: 700px; margin: auto; }
-        .inv-actions, .pipeline, .error-card, .toast { display: none !important; }
-      </style>
-    </head>
-    <body>
-      <div class="inv-card-print">${clone.outerHTML}</div>
-      <script>window.onload = function() { window.print(); window.close(); }<\\/script>
-    </body>
-    </html>
-  `);
-  printWin.document.close();
+          });
+        }
+      } catch (e) {}
+
+      // Fallback cleanup
+      setTimeout(cleanup, 15000);
+    }, 200);
+  });
 }
+
+function buildInvoiceHtml(data) {
+  // Escape all text values to prevent XSS and HTML rendering issues
+  const h = escapeHtml;
+  const e = function(v) { return h(String(v || '')); };
+  const isPaid = data.paymentStatus === 'Paid';
+  const badgeClass = isPaid ? 'status-paid' : 'status-venue';
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <title>Invoice ${data.bookingId}</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      background: #ffffff;
+      color: #0f172a;
+      padding: 40px 24px;
+      -webkit-font-smoothing: antialiased;
+    }
+    .invoice-container {
+      max-width: 700px;
+      margin: 0 auto;
+      border: 1px solid rgba(14, 165, 233, 0.14);
+      border-radius: 20px;
+      padding: 32px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(14,165,233,0.06), 0 4px 16px rgba(14,165,233,0.08);
+    }
+    .invoice-container::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, #0ea5e9, #f59e0b, #0ea5e9);
+      opacity: 0.6;
+    }
+    .inv-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid rgba(14, 165, 233, 0.08);
+      margin-bottom: 20px;
+    }
+    .inv-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .inv-logo {
+      width: 40px;
+      height: 40px;
+      background: #0ea5e9;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: 700;
+      font-size: 18px;
+    }
+    .inv-brand-name {
+      font-family: Georgia, 'Times New Roman', serif;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.3px;
+      line-height: 1.2;
+    }
+    .inv-brand-tag {
+      font-size: 11px;
+      color: #64748b;
+      letter-spacing: 0.3px;
+    }
+    .inv-badge {
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+    }
+    .inv-badge.status-paid {
+      background: rgba(20, 184, 166, 0.08);
+      color: #0d9488;
+      border: 1px solid rgba(20, 184, 166, 0.15);
+    }
+    .inv-badge.status-venue {
+      background: rgba(245, 158, 11, 0.08);
+      color: #d97706;
+      border: 1px solid rgba(245, 158, 11, 0.15);
+    }
+    .inv-id-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #e8f0fa;
+      border-radius: 10px;
+      margin-bottom: 20px;
+    }
+    .inv-id-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+    }
+    .inv-id-value {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      color: #0284c7;
+    }
+    .inv-details {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 24px;
+      padding: 16px;
+      background: #f4f8fe;
+      border-radius: 10px;
+      border: 1px solid rgba(14, 165, 233, 0.08);
+    }
+    .inv-detail {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+    .inv-d-label {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #64748b;
+    }
+    .inv-d-value {
+      font-size: 14px;
+      font-weight: 500;
+      color: #0f172a;
+    }
+    .inv-pricing {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .inv-pricing td {
+      padding: 10px 0;
+      font-size: 14px;
+      color: #475569;
+    }
+    .inv-pricing tr:not(:last-child) {
+      border-bottom: 1px solid rgba(14, 165, 233, 0.08);
+    }
+    .inv-rate {
+      font-size: 12px;
+      color: #64748b;
+    }
+    .inv-amount {
+      text-align: right;
+      font-weight: 500;
+      color: #0f172a;
+    }
+    .inv-total-row td {
+      padding-top: 14px;
+      border-top: 2px solid #f59e0b;
+    }
+    .inv-total-row td strong {
+      color: #0f172a;
+    }
+    .inv-total {
+      font-size: 22px;
+      font-weight: 700;
+      color: #d97706 !important;
+    }
+    .inv-footer {
+      text-align: center;
+      padding-top: 20px;
+      border-top: 1px solid rgba(14, 165, 233, 0.08);
+    }
+    .inv-footer p {
+      font-size: 12px;
+      color: #64748b;
+      font-style: italic;
+    }
+    @media print {
+      body { padding: 0; }
+      .invoice-container {
+        box-shadow: none;
+        border: none;
+        border-radius: 0;
+        padding: 20px;
+      }
+    }
+    @media (max-width: 600px) {
+      .invoice-container { padding: 20px; }
+      .inv-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+      .inv-details { grid-template-columns: 1fr 1fr; gap: 10px; padding: 12px; }
+      .inv-d-value { font-size: 13px; }
+      .inv-id-row { padding: 10px 14px; }
+      .inv-pricing td { padding: 8px 0; font-size: 13px; }
+      .inv-total { font-size: 20px; }
+    }
+    @media (max-width: 400px) {
+      .inv-details { grid-template-columns: 1fr; }
+    }
+  </style>
+</head>
+<body>
+  <div class="invoice-container">
+    <div class="inv-header">
+      <div class="inv-brand">
+        <div class="inv-logo">BYP</div>
+        <div>
+          <div class="inv-brand-name">Book Your Pitch</div>
+          <div class="inv-brand-tag">Sports Venue Booking</div>
+        </div>
+      </div>
+      <div class="inv-badge ${badgeClass}">${e(data.paymentStatus)}</div>
+    </div>
+
+    <div class="inv-id-row">
+      <span class="inv-id-label">Booking ID</span>
+      <span class="inv-id-value">${e(data.bookingId)}</span>
+    </div>
+
+    <div class="inv-details">
+      <div class="inv-detail">
+        <span class="inv-d-label">Customer</span>
+        <span class="inv-d-value">${e(data.customer)}</span>
+      </div>
+      <div class="inv-detail">
+        <span class="inv-d-label">Sport</span>
+        <span class="inv-d-value">${e(data.sport)}</span>
+      </div>
+      <div class="inv-detail">
+        <span class="inv-d-label">Venue</span>
+        <span class="inv-d-value">${e(data.venue)}</span>
+      </div>
+      <div class="inv-detail">
+        <span class="inv-d-label">Date</span>
+        <span class="inv-d-value">${e(data.date)}</span>
+      </div>
+      <div class="inv-detail">
+        <span class="inv-d-label">Time</span>
+        <span class="inv-d-value">${e(data.time)}</span>
+      </div>
+      <div class="inv-detail">
+        <span class="inv-d-label">Duration</span>
+        <span class="inv-d-value">${e(data.duration)}</span>
+      </div>
+    </div>
+
+    <table class="inv-pricing">
+      <tr>
+        <td>Base Amount <span class="inv-rate">${e(data.rateText)}</span></td>
+        <td class="inv-amount">${e(data.baseText)}</td>
+      </tr>
+      <tr>
+        <td>GST (18%)</td>
+        <td class="inv-amount">${e(data.gstText)}</td>
+      </tr>
+      <tr class="inv-total-row">
+        <td><strong>Total Amount</strong></td>
+        <td class="inv-amount inv-total">${e(data.totalText)}</td>
+      </tr>
+    </table>
+
+    <div class="inv-footer">
+      <p>Thank you for booking with us. See you at the venue!</p>
+    </div>
+  </div>
+
+</body>
+</html>`;
+}
+
+
 
 document.querySelectorAll('.field-input').forEach(el => {
   el.addEventListener('input', () => el.classList.remove('error'));
 });
 
-// ============================================
-// INIT
-// ============================================
+// Add event listeners for new features
 
-seedDefaultVenues();
-loadVenueSelect();
-filterSportsByVenue();
-updateBookingCount();
+// Dark mode toggle
+if (btnTheme) {
+  btnTheme.addEventListener('click', toggleTheme);
+}
 
-const tomorrow = new Date();
-tomorrow.setDate(tomorrow.getDate() + 1);
-document.getElementById('booking-date').value = tomorrow.toISOString().split('T')[0];
+// Clear recent clients
+if (recentClientsClear) {
+  recentClientsClear.addEventListener('click', function() {
+    localStorage.removeItem(RECENT_CLIENTS_KEY);
+    renderRecentClients();
+    showToast('Recent clients cleared', 'success');
+  });
+}
+
+// ============================================
+// INIT (safe — wrapped in try-catch)
+// ============================================
+try {
+  seedDefaultVenues();
+  loadVenueSelect();
+  filterSportsByVenue();
+  updateBookingCount();
+  loadTheme();
+  initVoiceInput();
+  renderRecentClients();
+  createConnectivityIndicator();
+
+  // Listen for connectivity changes
+  window.addEventListener('online', function() {
+    onConnectionRestored();
+  });
+  window.addEventListener('offline', function() {
+    updateConnectivityStatus();
+    showToast('📵 You are offline — bookings will be saved locally and synced when connection returns.', 'warning');
+  });
+
+  // Auto-sync pending items on startup
+  if (isOnline()) {
+    processSyncQueue().then(function(result) {
+      if (result.synced > 0 || result.failed > 0) {
+        console.log('Startup sync:', result.synced, 'synced,', result.failed, 'failed');
+        updateBookingCount();
+      }
+    }).catch(function(e) {
+      console.warn('Startup sync failed:', e);
+    });
+  }
+
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const dateInput = document.getElementById('booking-date');
+  if (dateInput) {
+    dateInput.value = tomorrow.toISOString().split('T')[0];
+  }
+} catch (e) {
+  console.error('Init error:', e);
+  showToast('⚠️ Page initialization error: ' + (e.message || 'Unknown'), 'error');
+}
 
 // Log connection status
 apiGet('/api/health')
@@ -1227,5 +2339,11 @@ apiGet('/api/health')
   })
   .catch(err => {
     console.warn('⚠️ Booking API not available:', err.message);
-    showToast(`API not reachable at ${API_BASE_URL}. Start the server with: cd booking-api && python main.py`, 'error');
+    // Still show connectivity indicator
+    createConnectivityIndicator();
+    updateConnectivityStatus();
+    // Try to sync pending items anyway
+    processSyncQueue().catch(function(e) {
+      console.warn('Background sync failed:', e);
+    });
   });

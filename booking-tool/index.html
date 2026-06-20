@@ -5,15 +5,23 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Book Your Pitch — Booking Automation</title>
 
+  <!-- PWA Manifest (enables Add to Home Screen) -->
+  <link rel="manifest" href="manifest.json" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Book Your Pitch" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0ea5e9" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;0,800;1,500;1,600&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet" />
 
-  <!-- html2pdf library for PDF export -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js" integrity="sha512-GsLlZN/3F2ErC5ifS5QtgpiJtWd43JWSuIgh7mbzZ8zBps+dvLusV+eNQATqgA/HdeKFVgA5v3S/cIrLF7QnIg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-
-  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="style.css?v=2" />
 </head>
 <body>
 
@@ -31,11 +39,15 @@
       <div class="nav-stats">
         <button class="nav-tab active" data-tab="booking" id="tab-booking">New Booking</button>
         <button class="nav-tab" data-tab="bookings-list" id="tab-bookings-list">All Bookings</button>
-        <button class="nav-tab" data-tab="venues" id="tab-venues">Manage Venues</button>
-        <span class="stat-badge" id="total-bookings">0</span>
+        <button class="nav-tab" data-tab="venues" id="tab-venues">Manage Venues</button>          <span class="stat-badge" id="total-bookings">0</span>
+          <button class="btn-theme" id="btn-theme" title="Toggle dark mode">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+              <path d="M10 2a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 2zM10 15a.75.75 0 01.75.75v1.5a.75.75 0 01-1.5 0v-1.5A.75.75 0 0110 15zM10 7a3 3 0 100 6 3 3 0 000-6zM15.657 5.404a.75.75 0 10-1.06-1.06l-1.061 1.06a.75.75 0 001.06 1.06l1.06-1.06zM6.464 14.596a.75.75 0 10-1.06-1.06l-1.06 1.06a.75.75 0 001.06 1.06l1.06-1.06zM18 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 0118 10zM5 10a.75.75 0 01-.75.75h-1.5a.75.75 0 010-1.5h1.5A.75.75 0 015 10zM17.661 14.596a.75.75 0 01-1.06 1.06l-1.06-1.06a.75.75 0 111.06-1.06l1.06 1.06zM4.343 5.404a.75.75 0 001.06 1.06l1.06-1.06a.75.75 0 00-1.06-1.06l-1.06 1.06z"/>
+            </svg>
+          </button>
+        </div>
       </div>
-    </div>
-  </nav>
+    </nav>
 
   <!-- ============== MAIN LAYOUT ============== -->
   <main class="main">
@@ -50,12 +62,20 @@
           <p class="panel-sub">Enter client details to process the booking</p>
         </div>
 
-        <form id="booking-form" autocomplete="off" novalidate>
+        <form id="booking-form" novalidate>
           <!-- Row 1 -->
           <div class="form-row">
             <div class="field-group">
               <label class="field-label" for="customer-name">Customer Name</label>
-              <input type="text" id="customer-name" class="field-input" placeholder="e.g. Rajesh Sharma" required />
+              <div class="field-with-mic">
+                <input type="text" id="customer-name" class="field-input" placeholder="e.g. Rajesh Sharma" autocomplete="name" required />
+                <button type="button" class="btn-mic" id="btn-mic" title="Speak customer name">
+                  <svg viewBox="0 0 20 20" fill="currentColor" width="16">
+                    <path d="M7 4a3 3 0 016 0v6a3 3 0 11-6 0V4z"/>
+                    <path d="M4 10a6 6 0 1112 0v1a6 6 0 01-12 0v-1zM3 10a.75.75 0 01.75.75v.25a6.25 6.25 0 1012.5 0v-.25a.75.75 0 011.5 0v.25a7.75 7.75 0 01-15.5 0v-.25A.75.75 0 013 10z"/>
+                  </svg>
+                </button>
+              </div>
             </div>
             <div class="field-group">
               <label class="field-label" for="sport-type">Sport Type</label>
@@ -95,12 +115,12 @@
           <div class="form-row">
             <div class="field-group">
               <label class="field-label" for="client-email">Email Address</label>
-              <input type="email" id="client-email" class="field-input" placeholder="e.g. client@example.com" />
+              <input type="email" id="client-email" class="field-input" placeholder="e.g. client@example.com" autocomplete="email" />
               <span class="field-hint">For email confirmation &amp; calendar invite</span>
             </div>
             <div class="field-group">
               <label class="field-label" for="client-phone">Phone Number</label>
-              <input type="tel" id="client-phone" class="field-input" placeholder="e.g. +91 98765 43210" />
+              <input type="tel" id="client-phone" class="field-input" placeholder="e.g. +91 98765 43210" autocomplete="tel" inputmode="numeric" />
               <span class="field-hint">For WhatsApp confirmation &amp; reminders</span>
             </div>
           </div>
@@ -142,6 +162,17 @@
           </button>
         </form>
 
+        <!-- Recent clients (auto-saved after each booking) -->
+        <div class="recent-clients" id="recent-clients">
+          <div class="recent-clients-header">
+            <span class="recent-clients-title">Recent Clients</span>
+            <button class="recent-clients-clear" id="recent-clients-clear">Clear</button>
+          </div>
+          <div class="recent-clients-list" id="recent-clients-list">
+            <!-- Chips rendered by JS -->
+          </div>
+        </div>
+
         <!-- Quick fill samples -->
         <div class="quick-fill">
           <span class="quick-label">Quick fill:</span>
@@ -152,7 +183,12 @@
       </section>
 
       <!-- RIGHT: RESULTS -->
-      <section class="panel panel-results" id="results-panel">
+      <section class="panel panel-results" id="results-panel" style="position:relative;">
+        <!-- Loading overlay for results panel -->
+        <div class="loading-overlay" id="results-loading">
+          <div class="loading-spinner"></div>
+          <span class="loading-text">Processing...</span>
+        </div>
         <!-- Empty state -->
         <div class="empty-state" id="empty-state">
           <svg class="empty-icon" viewBox="0 0 80 80" fill="none">
@@ -264,6 +300,10 @@
               <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4z"/></svg>
               Download PDF
             </button>
+            <button class="btn-action btn-share" id="btn-share">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M13 4.5a2.5 2.5 0 11.702 1.737L6.97 9.604a2.518 2.518 0 010 .792l6.733 3.367a2.5 2.5 0 11-.671 1.341l-6.733-3.367a2.5 2.5 0 110-3.475l6.733-3.366A2.52 2.52 0 0113 4.5z"/></svg>
+              Share Invoice
+            </button>
             <button class="btn-action btn-new" id="btn-new">
               <svg viewBox="0 0 20 20" fill="currentColor" width="18"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
               New Booking
@@ -319,7 +359,12 @@
         </div>
 
         <!-- Bookings table -->
-        <div class="table-wrapper">
+        <div class="table-wrapper" style="position:relative;">
+          <!-- Skeleton loading for bookings table -->
+          <div class="loading-overlay" id="bookings-loading" style="position:absolute;">
+            <div class="loading-spinner"></div>
+            <span class="loading-text">Loading bookings...</span>
+          </div>
           <table class="bookings-table" id="bookings-table">
             <thead>
               <tr>
@@ -433,6 +478,40 @@
   <!-- ============== TOAST ============== -->
   <div class="toast" id="toast"></div>
 
-  <script src="main.js"></script>
+  <!-- Cache-busting: version bump when JS changes -->
+  <script src="main.js?v=5"></script>
+
+  <!-- Inline diagnostic: runs even if main.js is cached/blocked -->
+  <script>
+    (function(){
+      var el = document.createElement('div');
+      el.id = 'js-diagnostic';
+      el.style.cssText = 'position:fixed;bottom:4px;right:4px;padding:4px 8px;font-size:11px;font-family:monospace;background:rgba(0,0,0,0.7);color:#0f0;border-radius:4px;z-index:99999;pointer-events:none;';
+      el.textContent = 'JS loaded';
+      document.body.appendChild(el);
+
+      // Check if main.js actually ran (venue functions should exist)
+      // main.js loads synchronously before this script, so functions are guaranteed to exist (or not)
+      if (typeof seedDefaultVenues === 'function' && typeof getVenues === 'function') {
+        el.textContent = '✅ main.js OK (' + new Date().toLocaleTimeString() + ')';
+      } else {
+        el.textContent = '❌ main.js NOT loaded!';
+        el.style.color = '#f44';
+      }
+    })();
+  </script>
+
+  <!-- Register service worker for PWA support -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(function(reg) {
+          console.log('✅ SW registered:', reg.scope);
+        })
+        .catch(function(err) {
+          console.warn('⚠️ SW registration failed:', err);
+        });
+    }
+  </script>
 </body>
 </html>

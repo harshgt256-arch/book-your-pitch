@@ -65,7 +65,7 @@ def ensure_headers(spreadsheet_id: Optional[str] = None) -> list[str]:
         ).execute()
         rows = result.get("values", [])
         if rows:
-            existing_headers = rows[0]
+            existing_headers = [h.strip() for h in rows[0]]
             # Check if expected headers exist (allow extra columns)
             if all(h in existing_headers for h in expected_headers):
                 return existing_headers
@@ -88,7 +88,11 @@ def ensure_headers(spreadsheet_id: Optional[str] = None) -> list[str]:
 
 
 def get_all_bookings(spreadsheet_id: Optional[str] = None) -> list[dict]:
-    """Read all rows from the Bookings sheet and return as list of dicts."""
+    """Read all rows from the Bookings sheet and return as list of dicts.
+
+    Strips whitespace from header names and computes missing total_amount
+    values for older bookings that don't have pricing data stored in the sheet.
+    """
     sid = spreadsheet_id or settings.google_sheets_spreadsheet_id
     if not sid:
         raise ValueError("GOOGLE_SHEETS_SPREADSHEET_ID not configured")
@@ -102,13 +106,58 @@ def get_all_bookings(spreadsheet_id: Optional[str] = None) -> list[dict]:
     if len(rows) < 2:
         return []
 
-    headers = rows[0]
+    # Strip whitespace from header names (Google Sheets sometimes adds leading spaces)
+    raw_headers = rows[0]
+    headers = [h.strip() for h in raw_headers]
+
     bookings = []
     for row in rows[1:]:
         booking = {}
         for i, header in enumerate(headers):
             booking[header] = row[i] if i < len(row) else ""
         bookings.append(booking)
+
+    # ── Fill in missing values for older bookings ───────────────
+    for booking in bookings:
+        # payment_mode / payment_status fallback
+        if not booking.get("payment_mode", ""):
+            booking["payment_mode"] = "Pay at Venue"
+        pm = (booking.get("payment_mode") or "").lower()
+        if not booking.get("payment_status", ""):
+            booking["payment_status"] = "Paid" if pm == "online" else "Pay at Venue"
+
+        # total_amount and pricing fallback
+        raw_amount = booking.get("total_amount", "")
+        try:
+            if raw_amount and int(str(raw_amount).strip()) > 0:
+                continue  # Already has a valid amount
+        except (ValueError, TypeError):
+            pass  # Empty or invalid — compute below
+
+        sport_key = (booking.get("service_type") or "").lower()
+        rate_per_hour = settings.pricing_map.get(sport_key, settings.price_default)
+
+        start_time = booking.get("preferred_time") or booking.get("start_time", "")
+        end_time = booking.get("end_time", "")
+
+        duration = float(settings.slot_duration_hours)
+        if start_time and end_time:
+            try:
+                sh, sm = map(int, start_time.split(":"))
+                eh, em = map(int, end_time.split(":"))
+                duration = max((eh + em / 60) - (sh + sm / 60), 0.5)
+            except (ValueError, TypeError):
+                pass
+
+        base_amount = round(rate_per_hour * duration)
+        gst_amount = round(base_amount * settings.gst_rate)
+        total_amount = base_amount + gst_amount
+
+        booking["total_amount"] = str(total_amount)
+        booking["rate_per_hour"] = rate_per_hour
+        booking["duration"] = duration
+        booking["base_amount"] = base_amount
+        booking["gst_amount"] = gst_amount
 
     return bookings
 
@@ -180,7 +229,7 @@ def update_booking_status(
     if len(rows) < 2:
         return False
 
-    headers = rows[0]
+    headers = [h.strip() for h in rows[0]]
     try:
         status_col = headers.index("status") + 1  # 1-indexed
         id_col = headers.index("booking_id") + 1

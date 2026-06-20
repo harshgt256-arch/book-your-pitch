@@ -49,15 +49,18 @@ def create_booking_event(booking: dict) -> dict | None:
     preferred_date = booking.get("preferred_date", "")
     start_time = booking.get("preferred_time", booking.get("start_time", "10:00"))
 
-    # Calculate end time (default 1 hour later)
-    start_h, start_m = map(int, start_time.split(":"))
-    end_h = start_h + int(settings.slot_duration_hours)
-    end_m = start_m
-    if end_h >= 24:
-        end_h = 23
-        end_m = 59
-
-    end_time = f"{end_h:02d}:{end_m:02d}"
+    # Use end_time from booking if provided, otherwise calculate (default 1 hour)
+    end_time_from_booking = booking.get("end_time", "")
+    if end_time_from_booking:
+        end_time = end_time_from_booking
+    else:
+        start_h, start_m = map(int, start_time.split(":"))
+        end_h = start_h + int(settings.slot_duration_hours)
+        end_m = start_m
+        if end_h >= 24:
+            end_h = 23
+            end_m = 59
+        end_time = f"{end_h:02d}:{end_m:02d}"
 
     # Format as ISO 8601 with IST offset
     start_iso = f"{preferred_date}T{start_time}:00+05:30"
@@ -95,18 +98,15 @@ def create_booking_event(booking: dict) -> dict | None:
         },
     }
 
-    # Add attendee if email is provided
-    if booking.get("client_email"):
-        event["attendees"] = [{"email": booking["client_email"]}]
-
     try:
         created = service.events().insert(
             calendarId=calendar_id,
             body=event,
-            sendUpdates="all" if booking.get("client_email") else "none",
+            sendUpdates="none",
         ).execute()
         print(f"✅ Calendar event created: {created.get('htmlLink', created.get('id', ''))}")
         return created
     except Exception as e:
-        print(f"❌ Calendar event creation failed: {e}")
+        error_str = str(e)
+        print(f"❌ Calendar event creation failed: {error_str[:200]}")
         return None
