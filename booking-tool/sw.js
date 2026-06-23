@@ -3,14 +3,14 @@
    Offline-first caching with background sync support.
    ============================================ */
 
-const CACHE_NAME = 'byp-cache-v3';
+const CACHE_NAME = 'byp-cache-v4';
 
 // Files to cache on install (the app shell)
 const PRECACHE_URLS = [
   '/',
   '/index.html',
   '/style.css',
-  '/main.js',
+  '/main.js?v=6',
   '/manifest.json',
   '/icon.svg',
 ];
