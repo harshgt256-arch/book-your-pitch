@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>API Debug Test</title></head>
+<body style="font-family:system-ui;padding:40px;max-width:600px;margin:auto;">
+  <h2>🔧 API Debug Test</h2>
+  <p>This page tests if the API connection works from the browser.</p>
+
+  <div id="status" style="padding:12px;margin:12px 0;border-radius:8px;font-weight:500;">Checking API...</div>
+
+  <hr style="margin:24px 0" />
+
+  <h3>Test Booking Form</h3>
+  <form id="test-form">
+    <input id="name" value="Debug User" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <input id="email" value="debug@test.com" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <input id="phone" value="+919876543210" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <select id="sport" style="display:block;width:100%;margin-bottom:8px;padding:8px;">
+      <option value="Cricket" selected>Cricket</option>
+      <option value="Football">Football</option>
+    </select>
+    <input id="date" type="date" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <input id="start" type="time" value="10:00" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <input id="end" type="time" value="11:00" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <input id="venue" value="Main Turf" style="display:block;width:100%;margin-bottom:8px;padding:8px;" />
+    <select id="payment" style="display:block;width:100%;margin-bottom:12px;padding:8px;">
+      <option value="Online">Online</option>
+      <option value="Pay at Venue" selected>Pay at Venue</option>
+    </select>
+    <button type="submit" style="padding:10px 24px;background:#0ea5e9;color:white;border:none;border-radius:8px;font-size:16px;cursor:pointer;">
+      Submit Test Booking
+    </button>
+  </form>
+
+  <pre id="result" style="background:#f5f5f5;padding:16px;border-radius:8px;margin-top:16px;overflow:auto;white-space:pre-wrap;"></pre>
+
+  <script>
+    const statusEl = document.getElementById('status');
+
+    // Test 1: Health check
+    fetch('/api/health')
+      .then(r => r.json())
+      .then(data => {
+        statusEl.textContent = '✅ API connected! Health: ' + JSON.stringify(data);
+        statusEl.style.background = '#d4edda';
+        statusEl.style.color = '#155724';
+      })
+      .catch(err => {
+        statusEl.textContent = '❌ API connection FAILED: ' + err.message;
+        statusEl.style.background = '#f8d7da';
+        statusEl.style.color = '#721c24';
+      });
+
+    // Test 2: Form submission
+    document.getElementById('test-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const resultEl = document.getElementById('result');
+      resultEl.textContent = 'Sending...';
+
+      const payload = {
+        name: document.getElementById('name').value,
+        email: document.getElementById('email').value,
+        phone: document.getElementById('phone').value,
+        service_type: document.getElementById('sport').value,
+        preferred_date: document.getElementById('date').value,
+        preferred_time: document.getElementById('start').value,
+        end_time: document.getElementById('end').value,
+        venue_name: document.getElementById('venue').value,
+        payment_mode: document.getElementById('payment').value,
+        message: 'Debug test',
+      };
+
+      try {
+        const res = await fetch('/api/bookings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        resultEl.textContent = '✅ Success!\n' + JSON.stringify(data, null, 2);
+      } catch (err) {
+        resultEl.textContent = '❌ Error: ' + err.message;
+      }
+    });
+
+    // Set default date to tomorrow
+    const tomorrow = new Date();
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    document.getElementById('date').value = tomorrow.toISOString().split('T')[0];
+  </script>
+</body>
+</html>

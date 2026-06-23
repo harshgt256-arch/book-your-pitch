@@ -22,7 +22,13 @@ service-account-key.json
 .DS_Store
 Thumbs.db
 
+# ── Node / npm ───────────────────────────────
+node_modules/
+
 # ── Logs / temp ─────────────────────────────
 *.log
 *.pid
 *.seed
+
+# Local Netlify folder
+.netlify

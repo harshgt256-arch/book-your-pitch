@@ -1,0 +1,37 @@
+[build]
+  command = "echo 'Static site ready — no build step needed'"
+  functions = "netlify/functions"
+  publish = "booking-tool"
+
+# Route /api/* requests to Netlify Functions
+# Each function checks event.httpMethod to handle GET/POST/DELETE
+[[redirects]]
+  from = "/api/health"
+  to = "/.netlify/functions/health"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings"
+  to = "/.netlify/functions/bookings"
+  status = 200
+
+[[redirects]]
+  from = "/api/bookings/:id"
+  to = "/.netlify/functions/booking?id=:id"
+  status = 200
+
+[[redirects]]
+  from = "/api/setup/guide"
+  to = "/.netlify/functions/setup-guide"
+  status = 200
+
+[[redirects]]
+  from = "/api/cron/reminders"
+  to = "/.netlify/functions/cron-reminders"
+  status = 200
+
+# Fallback: serve index.html for all other routes
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
