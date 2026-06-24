@@ -125,7 +125,7 @@
             </div>
           </div>
 
-          <!-- Row 4 -->
+          <!-- Row 4: Slot picker replaces manual time inputs -->
           <div class="form-row">
             <div class="field-group">
               <label class="field-label" for="start-time">Start Time</label>
@@ -135,6 +135,22 @@
               <label class="field-label" for="end-time">End Time</label>
               <input type="time" id="end-time" class="field-input" required />
             </div>
+          </div>
+
+          <!-- Slot picker grid (shown when date + venue + sport selected) -->
+          <div class="slot-picker" id="slot-picker" style="display:none;">
+            <div class="slot-picker-header">
+              <span class="slot-picker-title">Available Slots</span>
+              <span class="slot-picker-sub" id="slot-picker-sub"></span>
+            </div>
+            <div class="slot-picker-grid" id="slot-picker-grid">
+              <!-- Rendered by JS -->
+            </div>
+            <div class="slot-picker-loading" id="slot-picker-loading">
+              <div class="loading-spinner" style="width:20px;height:20px;"></div>
+              <span>Checking availability...</span>
+            </div>
+            <div class="slot-picker-error" id="slot-picker-error" style="display:none;"></div>
           </div>
 
           <!-- Row 5 -->
@@ -407,6 +423,10 @@
             <button class="btn-action btn-add-venue" id="btn-add-venue">
               <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M10.75 4.75a.75.75 0 00-1.5 0v4.5h-4.5a.75.75 0 000 1.5h4.5v4.5a.75.75 0 001.5 0v-4.5h4.5a.75.75 0 000-1.5h-4.5v-4.5z"/></svg>
               Add Venue
+            </button>
+            <button class="btn-action btn-cleanup" id="btn-cleanup-calendar">
+              <svg viewBox="0 0 20 20" fill="currentColor" width="16"><path d="M6 2a1 1 0 00-1 1v1H4a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V6a2 2 0 00-2-2h-1V3a1 1 0 10-2 0v1H7V3a1 1 0 00-1-1zM4 8h12v8H4V8z"/></svg>
+              Cleanup Calendar
             </button>
           </div>
         </div>

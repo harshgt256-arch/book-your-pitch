@@ -1716,6 +1716,9 @@ function applySample(key) {
   });
 
   clearErrors();
+
+  // Trigger slot picker to refresh for the new sample data
+  onSlotPickerInput();
 }
 
 // ============================================
@@ -2265,7 +2268,162 @@ document.querySelectorAll('.field-input').forEach(el => {
   el.addEventListener('input', () => el.classList.remove('error'));
 });
 
-// Add event listeners for new features
+// ============================================
+// SLOT PICKER
+// ============================================
+
+let _slotPickerTimer = null;
+const slotPicker = document.getElementById('slot-picker');
+const slotPickerGrid = document.getElementById('slot-picker-grid');
+const slotPickerSub = document.getElementById('slot-picker-sub');
+const slotPickerLoading = document.getElementById('slot-picker-loading');
+const slotPickerError = document.getElementById('slot-picker-error');
+
+/**
+ * Fetch available slots from the API and render the picker grid.
+ */
+async function fetchAndRenderSlots() {
+  const date = document.getElementById('booking-date').value;
+  const venue = document.getElementById('venue-name').value;
+  const sport = document.getElementById('sport-type').value;
+
+  // Only show slot picker when all three are selected
+  if (!date || !venue || !sport || venue === '__no_venues__') {
+    slotPicker.style.display = 'none';
+    return;
+  }
+
+  slotPicker.style.display = 'block';
+  slotPickerGrid.style.display = 'none';
+  slotPickerError.style.display = 'none';
+  slotPickerLoading.classList.add('show');
+  slotPickerSub.textContent = 'Checking...';
+
+  try {
+    const res = await fetch(`/api/slots?date=${encodeURIComponent(date)}&venue=${encodeURIComponent(venue)}&sport=${encodeURIComponent(sport)}`);
+    const data = await res.json();
+
+    slotPickerLoading.classList.remove('show');
+
+    if (!data.success) {
+      slotPickerError.textContent = data.message || 'Failed to load slots';
+      slotPickerError.style.display = 'block';
+      slotPickerGrid.style.display = 'none';
+      return;
+    }
+
+    const slots = data.slots || [];
+    const summary = data.summary || {};
+
+    slotPickerSub.textContent = `${summary.available || 0} available of ${summary.total_slots || 0} slots`;
+
+    if (slots.length === 0) {
+      slotPickerGrid.innerHTML = '<div class="slot-picker-error" style="display:block;">No time slots available for this date.</div>';
+      return;
+    }
+
+    // Render slot buttons
+    let html = '';
+    slots.forEach(function(s) {
+      const statusClass = s.available ? 'available' : 'booked';
+      const statusLabel = s.available ? 'Available' : 'Booked';
+      html += `<button type="button" class="slot-btn ${statusClass}" data-start="${s.start_time}" data-end="${s.end_time}" ${s.available ? '' : 'disabled'}>
+        <span class="slot-time">${s.start_time} — ${s.end_time}</span>
+        <span class="slot-label">${statusLabel}</span>
+      </button>`;
+    });
+
+    slotPickerGrid.innerHTML = html;
+    slotPickerGrid.style.display = 'grid';
+
+    // Attach click handlers to available slots
+    slotPickerGrid.querySelectorAll('.slot-btn.available').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        // Deselect all
+        slotPickerGrid.querySelectorAll('.slot-btn').forEach(function(b) {
+          b.classList.remove('selected');
+        });
+        // Select this slot
+        btn.classList.add('selected');
+        // Fill in the time inputs
+        document.getElementById('start-time').value = btn.dataset.start;
+        document.getElementById('end-time').value = btn.dataset.end;
+        // Clear errors
+        document.getElementById('start-time').classList.remove('error');
+        document.getElementById('end-time').classList.remove('error');
+      });
+    });
+  } catch (err) {
+    slotPickerLoading.classList.remove('show');
+    slotPickerError.textContent = 'Could not load slots. ' + (err.message || '');
+    slotPickerError.style.display = 'block';
+    slotPickerGrid.style.display = 'none';
+    console.warn('Slot picker error:', err);
+  }
+}
+
+/**
+ * Debounced version of fetchAndRenderSlots for form change events.
+ */
+function onSlotPickerInput() {
+  clearTimeout(_slotPickerTimer);
+  _slotPickerTimer = setTimeout(fetchAndRenderSlots, 300);
+}
+
+// Watch for changes on date, venue, and sport selects
+if (document.getElementById('booking-date')) {
+  document.getElementById('booking-date').addEventListener('change', onSlotPickerInput);
+}
+// The venue and sport select already have listeners; add slot picker trigger to them
+document.getElementById('venue-name').addEventListener('change', function() {
+  // Keep existing filterSportsByVenue behavior
+  onSlotPickerInput();
+});
+document.getElementById('sport-type').addEventListener('change', onSlotPickerInput);
+
+// ============================================
+// CALENDAR CLEANUP
+// ============================================
+
+async function cleanupCalendar() {
+  const btn = document.getElementById('btn-cleanup-calendar');
+  if (!btn) return;
+
+  btn.classList.add('cleaning');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner"></span> Cleaning...';
+
+  try {
+    const res = await fetch('/api/cleanup/calendar', { method: 'POST' });
+    const data = await res.json();
+
+    if (data.success) {
+      showToast(
+        `🗑️ Cleaned ${data.deleted} past booking${data.deleted !== 1 ? 's' : ''} from Calendar`,
+        'success'
+      );
+    } else {
+      showToast('Calendar cleanup failed: ' + (data.message || 'Unknown error'), 'error');
+    }
+  } catch (err) {
+    showToast('Calendar cleanup failed: ' + (err.message || 'Could not connect'), 'error');
+    console.warn('Cleanup error:', err);
+  } finally {
+    btn.classList.remove('cleaning');
+    btn.innerHTML = originalText;
+  }
+}
+
+// Attach cleanup button handler
+if (document.getElementById('btn-cleanup-calendar')) {
+  document.getElementById('btn-cleanup-calendar').addEventListener('click', function() {
+    cleanupCalendar();
+  });
+}
+
+// ============================================
+// EVENT LISTENERS (additional)
+// ============================================
 
 // Dark mode toggle
 if (btnTheme) {

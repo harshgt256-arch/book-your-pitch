@@ -30,6 +30,16 @@
   to = "/.netlify/functions/cron-reminders"
   status = 200
 
+[[redirects]]
+  from = "/api/slots"
+  to = "/.netlify/functions/slots"
+  status = 200
+
+[[redirects]]
+  from = "/api/cleanup/calendar"
+  to = "/.netlify/functions/cleanup-calendar"
+  status = 200
+
 # Fallback: serve index.html for all other routes
 [[redirects]]
   from = "/*"

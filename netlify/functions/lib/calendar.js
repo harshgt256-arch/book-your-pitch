@@ -33,13 +33,30 @@ function getSlotDurationHours() {
 }
 
 /**
+ * Check if the booking is for a past date — skip Calendar event if so.
+ */
+function isPastBooking(preferredDate) {
+  if (!preferredDate) return false;
+  const now = new Date();
+  const istOffset = 5.5 * 60 * 60 * 1000;
+  const istNow = new Date(now.getTime() + istOffset);
+  const todayStr = istNow.toISOString().split('T')[0];
+  return preferredDate < todayStr;
+}
+
+/**
  * Create a Google Calendar event for a confirmed booking.
  * Returns the created event object, or null on failure.
  */
 async function createBookingEvent(booking) {
-  const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
-  if (!spreadsheetId) {
-    console.log('⚠️ GOOGLE_SHEETS_SPREADSHEET_ID not set — skipping calendar event');
+  // Only create Calendar events for future or today's bookings
+  if (isPastBooking(booking.preferred_date)) {
+    console.log(`⏭️ Skipping Calendar event for past booking ${booking.booking_id} (${booking.preferred_date})`);
+    return null;
+  }
+
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    console.log('⚠️ GOOGLE_SERVICE_ACCOUNT_JSON not set — skipping calendar event');
     return null;
   }
 
@@ -113,4 +130,59 @@ async function createBookingEvent(booking) {
   }
 }
 
-module.exports = { createBookingEvent };
+/**
+ * List calendar events from a date range.
+ * Returns events created by our service account or matching our naming pattern.
+ */
+async function listCalendarEvents(options = {}) {
+  const {
+    calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary',
+    timeMin = null,
+    timeMax = null,
+  } = options;
+
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+    console.log('⚠️ GOOGLE_SERVICE_ACCOUNT_JSON not set — cannot list calendar events');
+    return [];
+  }
+
+  const service = await getCalendarService();
+
+  const params = {
+    calendarId,
+    singleEvents: true,
+    orderBy: 'startTime',
+  };
+  if (timeMin) params.timeMin = timeMin;
+  if (timeMax) params.timeMax = timeMax;
+
+  try {
+    const response = await service.events.list(params);
+    const events = response.data.items || [];
+    console.log(`📅 Found ${events.length} events in calendar`);
+    return events;
+  } catch (err) {
+    console.error(`❌ Failed to list calendar events: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Delete a calendar event by its ID.
+ */
+async function deleteCalendarEvent(eventId, calendarId = process.env.GOOGLE_CALENDAR_ID || 'primary') {
+  if (!process.env.GOOGLE_SERVICE_ACCOUNT_JSON) return false;
+
+  const service = await getCalendarService();
+
+  try {
+    await service.events.delete({ calendarId, eventId });
+    console.log(`🗑️ Deleted calendar event: ${eventId}`);
+    return true;
+  } catch (err) {
+    console.error(`❌ Failed to delete calendar event ${eventId}: ${err.message}`);
+    return false;
+  }
+}
+
+module.exports = { createBookingEvent, listCalendarEvents, deleteCalendarEvent };
